@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::base_sim_app_gio::MyApp;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
 
@@ -8,6 +9,7 @@ mod sim_control;
 mod initializer;
 mod skylink_drone;
 mod test;
+mod base_sim_app_gio;
 
 fn main() {
     // println!("Hello, world!");
@@ -27,10 +29,10 @@ fn main() {
         // test_star_flood();
         // test_butterfly_flood();
         // test_tree_flood();
-         test_drone_commands();
+        // test_drone_commands();
         // test_busy_network();
 
-        
+        run_sim_gio().expect("TODO: panic message");
 
     } else {
         let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
@@ -44,4 +46,13 @@ fn main() {
             handle.join().unwrap();
         }
     }
+}
+
+fn run_sim_gio() -> Result<(), eframe::Error>{
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Interfaccia con layout adattabile",
+        options,
+        Box::new(|_cc| Box::new(MyApp::new())),
+    )
 }
