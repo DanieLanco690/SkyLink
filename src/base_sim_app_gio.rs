@@ -247,6 +247,7 @@ STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
 STRICTLY FOR SIM CONTROL PART:
 1) correct spawn, and remove NODES. not only drones anymore
 2) change accordingly to sim app parts
+3) probably is in great part to be redone, but it's a good start i think
 
 
 STRICTLY FOR SIM APP PART:
