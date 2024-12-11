@@ -235,4 +235,29 @@ impl eframe::App for MyApp {
 
 fn add_drone(checked_indices: &Vec<NodeId>) {
     println!("Checked items indices: {:?}", checked_indices);
+
+    ///todo
 }
+
+
+/*
+feel free to update this list.
+STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
+
+STRICTLY FOR SIM CONTROL PART:
+1) correct spawn, and remove NODES. not only drones anymore
+2) change accordingly to sim app parts
+
+
+STRICTLY FOR SIM APP PART:
+0) add field in MyNodes that tell the Type of the Node (NodeType), and change creation of the Circles depending on the Nodetype.
+1) make a field for a rc<refcell<simcontroll>
+2) make that the vectors in MyApp get filled from the informations on simcontroll.network_graph
+3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone
+4) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
+5) add bottons in the pop ups for clients/servers that send flood req or certain messages
+6) at the end, change the circles in drones/clients/server small entities
+
+(.. more to come)
+
+ */
