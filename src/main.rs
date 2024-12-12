@@ -3,6 +3,7 @@ use std::rc::Rc;
 use crate::base_sim_app_gio::MyApp;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
+use crate::sim_control::SimulationControl;
 
 mod sim_app;
 mod sim_control;
@@ -10,6 +11,7 @@ mod initializer;
 mod skylink_drone;
 mod test;
 mod base_sim_app_gio;
+
 
 fn main() {
     // println!("Hello, world!");
@@ -31,8 +33,9 @@ fn main() {
         // test_tree_flood();
         // test_drone_commands();
         // test_busy_network();
-
-        run_sim_gio().expect("TODO: panic message");
+        let (sim_contr, handles) = initialize("inputs/input_star.toml");
+        let mut pass = Rc::new(RefCell::new(sim_contr));
+        run_sim_gio(pass).expect("TODO: panic message");
 
     } else {
         let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
@@ -40,19 +43,17 @@ fn main() {
         pass.borrow_mut().crash_drone(2);
         sim_app::run_simulation_gui(pass.clone());
 
-
-
         for handle in handles.into_iter() {
             handle.join().unwrap();
         }
     }
 }
 
-fn run_sim_gio() -> Result<(), eframe::Error>{
+fn run_sim_gio(sim_control: Rc<RefCell<SimulationControl>>) -> Result<(), eframe::Error>{
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Interfaccia con layout adattabile",
         options,
-        Box::new(|_cc| Box::new(MyApp::new())),
+        Box::new(|_cc| Box::new(MyApp::new(sim_control))),
     )
 }

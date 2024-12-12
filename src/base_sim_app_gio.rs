@@ -1,10 +1,12 @@
-
+use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::ops::Index;
+use std::rc::Rc;
 use eframe::egui;
 use eframe::egui::{CentralPanel, Color32, Frame, Grid, Layout, SidePanel, TopBottomPanel, Vec2, Shape, Painter, Rect, Pos2};
 use egui::Rangef;
 use wg_2024::network::NodeId;
-
+use crate::sim_control::SimulationControl;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -37,22 +39,26 @@ impl Ord for MyNodes {
 
 pub enum Scene{
     Start,
-    Manage,
+    ManageAdd,
+    ManageCrash,
 }
 pub struct MyApp {
-    //field per simulation controll
+    sim_contr: Rc<RefCell<SimulationControl>>,
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
     selected_nodes: Vec<bool>, // Salva l'indice del drone selezionato
+    pdr: f32
 }
 
 impl MyApp {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(sim_contr: Rc<RefCell<SimulationControl>>) -> Self {
+        let network_graph = sim_contr.borrow().network_graph.clone();
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
         let mut selected_nodes = Vec::new();
-        for _ in 0..fastrand::usize(12..18) {
+
+        /*for _ in 0..fastrand::usize(12..18) {
             let new_drone = MyNodes {
                 id: fastrand::u8(0..255),
                 connections: Vec::new(),
@@ -60,12 +66,51 @@ impl MyApp {
             vec.push(new_drone);
             checked.push(false);
             selected_nodes.push(false);
+        } */
+
+        for (node_id, neighbors) in network_graph {
+            vec.push(MyNodes{id : node_id, connections: neighbors});
+            checked.push(false);
+            selected_nodes.push(false);
         }
-        Self {
+
+        let mut app = Self {
             nodes: vec,
             scene: Scene::Start,
             checked,
             selected_nodes,
+            sim_contr: sim_contr,
+            pdr: 0.0
+        };
+        //app.generate_random_connections();
+        app
+    }
+
+    pub fn update_topology(&mut self, sim_contr: Rc<RefCell<SimulationControl>>) {
+        let network_graph = sim_contr.borrow().network_graph.clone();
+        for (node_id, neighbors) in network_graph {
+            self.nodes.push(MyNodes{id : node_id, connections: neighbors});
+            self.checked.push(false);
+            self.selected_nodes.push(false);
+        }
+    }
+
+    fn generate_random_connections(&mut self) {
+        let total_nodes = self.nodes.len();
+
+        for i in 0..total_nodes {
+            let num_connections = fastrand::usize(1..=3);
+            let mut connections = Vec::new();
+
+            while connections.len() < num_connections {
+                let random_index = fastrand::usize(0..total_nodes);
+
+                if random_index != i && !connections.contains(&self.nodes[random_index].id) {
+                    connections.push(self.nodes[random_index].id);
+                }
+            }
+
+            self.nodes[i].connections = connections;
         }
     }
 
@@ -81,6 +126,8 @@ impl MyApp {
             self.checked.push(false);
             self.selected_nodes.push(false);
         }
+
+        self.generate_random_connections();
         println!("len: {:?} vec: {:?}", self.nodes.len(), self.nodes.clone());
     }
 
@@ -94,6 +141,7 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
         // BottomPanel ridimensionabile
         egui::TopBottomPanel::bottom("bottom_panel")
             .height_range(100.0..=200.0)
@@ -105,41 +153,71 @@ impl eframe::App for MyApp {
             });
 
         // SidePanel sulla sinistra
-        egui::SidePanel::left("side_panel")
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.heading("Pannello laterale");
-                match self.scene {
-                    Scene::Start => {
-                        if ui.button("Retest!").clicked() {
-                            self.retest();
+            egui::SidePanel::left("side_panel")
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.heading("Actions");
+                    match self.scene {
+                        Scene::Start => {
+                            if ui.button("Retest!").clicked() {
+                                self.retest();
+                            }
+                            if ui.button("Add Drone!").clicked() {
+                                self.scene = Scene::ManageAdd;
+                            }
+                            if ui.button("remove Drone!").clicked() {
+                                self.scene = Scene::ManageCrash;
+                            }
                         }
-                        if ui.button("Add Drone!").clicked() {
-                            self.scene = Scene::Manage;
-                        }
-                        if ui.button("remove Drone!").clicked() {
-                            self.scene = Scene::Manage;
-                        }
-                    }
-                    Scene::Manage => {
-                        for (i, item) in self.nodes.iter().enumerate() {
-                            ui.checkbox(&mut self.checked[i], item.id.to_string());
-                        }
+                        Scene::ManageAdd => {
+                            if ui.button("back").clicked() {
+                                self.scene = Scene::Start;
+                            }
+                            ui.separator();
+                            ui.label("select drones to connect the new drone with:");
+                            for (i, item) in self.nodes.iter().enumerate() {
+                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            }
+                            ui.separator();
+                            ui.label("input pdr:");
+                            ui.add(egui::DragValue::new(&mut self.pdr).speed(0.1));
+                            ui.separator();
 
-                        if ui.button("Process Checked Items").clicked() {
-                            let checked_indices: Vec<NodeId> = self
-                                .checked
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, &is_checked)| if is_checked { Some(self.nodes[i].id) } else { None })
-                                .collect();
-                            add_drone(&checked_indices);
-                            self.reset_check();
-                            self.scene = Scene::Start;
+                            if ui.button("Confirm").clicked() {
+                                let checked_indices: Vec<NodeId> = self
+                                    .checked
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(i, &is_checked)| if is_checked { Some(self.nodes[i].id) } else { None })
+                                    .collect();
+                                add_node(&checked_indices, self.pdr);
+                                self.reset_check();
+                                self.scene = Scene::Start;
+
+                            }
+                        }
+                        Scene::ManageCrash => {
+                            ui.separator();
+                            ui.label("select drones to crash:");
+                            ui.separator();
+                            for (i, item) in self.nodes.iter().enumerate() {
+                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            }
+
+                            if ui.button("Process Checked Items").clicked() {
+                                let checked_indices: Vec<NodeId> = self
+                                    .checked
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(i, &is_checked)| if is_checked { Some(self.nodes[i].id) } else { None })
+                                    .collect();
+                                //add_node(&checked_indices);
+                                self.reset_check();
+                                self.scene = Scene::Start;
+                            }
                         }
                     }
-                }
-            });
+                });
 
         for (index, is_selected) in self.selected_nodes.iter_mut().enumerate() {
             if *is_selected {
@@ -163,7 +241,6 @@ impl eframe::App for MyApp {
             }
         }
 
-
         // Pannello centrale
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
@@ -172,60 +249,61 @@ impl eframe::App for MyApp {
 
                 ui.heading("Network Topology");
 
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    // Calcola il centro e il raggio
-                    let available_size = ui.available_size();
-                    let center = egui::pos2(
-                        ui.min_rect().left() + available_size.x / 2.0,
-                        ui.min_rect().top() + available_size.y / 2.0,
-                    );
-                    let radius = available_size.x.min(available_size.y) * 0.4;
+                let available_size = ui.available_size();
+                let center = egui::pos2(
+                    ui.min_rect().left() + available_size.x / 2.0,
+                    ui.min_rect().top() + available_size.y / 2.0,
+                );
+                let radius = available_size.x.min(available_size.y) * 0.4;
 
-                    // Ordina i valori
-                    self.nodes.sort();
-                    let total_items = self.nodes.len();
+                self.nodes.sort();
+                let total_items = self.nodes.len();
 
-                    // Gestione interattiva dei cerchi
-                    for (index, value) in self.nodes.iter().enumerate() {
-                        // Angolo per ciascun cerchio
-                        let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
+                let mut positions = Vec::new();
+                for (index, _value) in self.nodes.iter().enumerate() {
+                    let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
+                    let x = center.x + radius * angle.cos();
+                    let y = center.y + radius * angle.sin();
+                    positions.push(egui::pos2(x, y));
+                }
 
-                        // Posizione del cerchio sulla circonferenza
-                        let x = center.x + radius * angle.cos();
-                        let y = center.y + radius * angle.sin();
+                let painter = ui.painter();
 
-                        // Rettangolo cliccabile
-                        let rect = egui::Rect::from_center_size(egui::pos2(x, y), egui::vec2(50.0, 50.0));
-                        let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
-
-                        // Disegna il cerchio
-                        let painter = ui.painter();
-                        let circle_color = if self.selected_nodes[index] {
-                            egui::Color32::YELLOW
-                        } else {
-                            egui::Color32::GREEN
-                        };
-
-                        painter.circle_filled(rect.center(), 15.0, circle_color);
-
-                        // Disegna il testo
-                        painter.text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            value.id.to_string(),
-                            egui::FontId::proportional(16.0),
-                            egui::Color32::BLUE,
-                        );
-
-                        // Gestisci il clic
-                        if response.clicked() {
-                            self.selected_nodes[index] = true;
-                            println!("Drone selezionato: {:?}", self.nodes[index]);
-
-
+                for (i, node) in self.nodes.iter().enumerate() {
+                    for &connection in &node.connections {
+                        if let Some(j) = self.nodes.iter().position(|n| n.id == connection) {
+                            let line_color = egui::Color32::WHITE;
+                            painter.line_segment([positions[i], positions[j]], (2.0, line_color));
                         }
                     }
-                });
+                }
+
+                for (index, value) in self.nodes.iter().enumerate() {
+                    let rect = egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
+                    let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
+
+                    let circle_color = if self.selected_nodes[index] {
+                        egui::Color32::BLUE
+                    } else {
+                        egui::Color32::from_rgb(216, 100, 56)
+                    };
+                    painter.circle_filled(rect.center(), 15.0, circle_color);
+
+                    // Disegna il testo
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        value.id.to_string(),
+                        egui::FontId::proportional(16.0),
+                        egui::Color32::WHITE,
+                    );
+
+                    // Gestisci il clic
+                    if response.clicked() {
+                        self.selected_nodes[index] = true;
+                        println!("Drone selezionato: {:?}", self.nodes[index]);
+                    }
+                }
             });
         });
     }
@@ -233,10 +311,9 @@ impl eframe::App for MyApp {
 
 }
 
-fn add_drone(checked_indices: &Vec<NodeId>) {
-    println!("Checked items indices: {:?}", checked_indices);
+fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
+   // SimulationControl::spawn_node(&mut , pdr, checked_indices.clone());
 
-    ///todo
 }
 
 
