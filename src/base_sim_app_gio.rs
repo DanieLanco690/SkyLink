@@ -172,6 +172,8 @@ impl eframe::App for MyApp {
                         Scene::ManageAdd => {
                             if ui.button("back").clicked() {
                                 self.scene = Scene::Start;
+                                self.reset_check();
+                                self.pdr = 0.0;
                             }
                             ui.separator();
                             ui.label("select drones to connect the new drone with:");
@@ -193,7 +195,6 @@ impl eframe::App for MyApp {
                                 add_node(&checked_indices, self.pdr);
                                 self.reset_check();
                                 self.scene = Scene::Start;
-
                             }
                         }
                         Scene::ManageCrash => {
